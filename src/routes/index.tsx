@@ -4,8 +4,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { Search, MapPin, Phone, Clock, LocateFixed, Users, Timer, Activity, Building2, Info, LogIn, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { CATEGORY_COLOR, CATEGORY_GLYPH, CATEGORY_LABEL, fetchPlaces, geocode, haversineKm, type Place, type Sector } from "@/lib/places";
-import { estimateQueue, quietHours, WINDOW_HOURS, type Category, type QueueEvent } from "@/lib/queue";
+import { cachedPlaces, CATEGORY_COLOR, CATEGORY_GLYPH, CATEGORY_LABEL, fetchPlaces, geocode, haversineKm, type Place, type Sector } from "@/lib/places";
+import { estimateQueue, quietHours, typicalQueue, typicalQuietHours, WINDOW_HOURS, type Category, type QueueEvent } from "@/lib/queue";
 
 const HealthMap = lazy(() => import("@/components/HealthMap"));
 
@@ -50,7 +50,7 @@ function Index() {
     let alive = true;
     setLoading(true);
     setError(null);
-    setPlaces([]);
+    setPlaces(cachedPlaces(center, radius) ?? []);
     fetchPlaces(center, radius)
       .then((r) => {
         if (!alive) return;
@@ -279,6 +279,7 @@ function LevelPill({ level }: { level: "baixo" | "moderado" | "alto" }) {
 
 function PlaceCard({ place, events, active, onClick }: { place: Place; events: QueueEvent[]; active: boolean; onClick: () => void }) {
   const est = estimateQueue(events, place.category);
+  const typ = typicalQueue(place.category, new Date().getHours());
   return (
     <button onClick={onClick} className={`flex gap-3 rounded-2xl border bg-card p-4 text-left shadow-card transition hover:border-primary ${active ? "border-primary ring-2 ring-primary/20" : ""}`}>
       <CatBadge c={place.category} />
@@ -293,7 +294,7 @@ function PlaceCard({ place, events, active, onClick }: { place: Place; events: Q
           {est.reports > 0 ? (
             <span className="flex items-center gap-2"><LevelPill level={est.level} /> ~{est.waitMinutes} min · estimativa</span>
           ) : (
-            <span className="text-muted-foreground">Fila: sem relatos recentes</span>
+            <span className="flex items-center gap-2 text-muted-foreground"><LevelPill level={typ.level} /> ~{typ.people} pessoas · {typ.waitMinutes} min · estimativa típica</span>
           )}
         </div>
       </div>
@@ -303,6 +304,9 @@ function PlaceCard({ place, events, active, onClick }: { place: Place; events: Q
 
 function Detail({ place, events, onReported, onClose }: { place: Place; events: QueueEvent[]; onReported: () => void; onClose: () => void }) {
   const est = estimateQueue(events, place.category);
+  const live = est.reports > 0;
+  const typ = typicalQueue(place.category, new Date().getHours());
+  const shown = live ? est : typ;
   const hours = quietHours(events);
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -332,14 +336,14 @@ function Detail({ place, events, onReported, onClose }: { place: Place; events: 
       </ul>
 
       <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-muted p-3 text-center">
-        <div><Users className="mx-auto h-4 w-4 text-primary" /><div className="font-display text-xl font-bold">{est.reports ? est.people : "—"}</div><div className="text-[11px] text-muted-foreground">aguardando</div></div>
-        <div><Timer className="mx-auto h-4 w-4 text-primary" /><div className="font-display text-xl font-bold">{est.reports ? `${est.waitMinutes}′` : "—"}</div><div className="text-[11px] text-muted-foreground">espera</div></div>
-        <div><Activity className="mx-auto h-4 w-4 text-primary" /><div className="mt-1">{est.reports ? <LevelPill level={est.level} /> : "—"}</div><div className="mt-1 text-[11px] text-muted-foreground">movimento</div></div>
+        <div><Users className="mx-auto h-4 w-4 text-primary" /><div className="font-display text-xl font-bold">{shown.people}</div><div className="text-[11px] text-muted-foreground">pessoas na frente</div></div>
+        <div><Timer className="mx-auto h-4 w-4 text-primary" /><div className="font-display text-xl font-bold">{shown.waitMinutes} min</div><div className="text-[11px] text-muted-foreground">espera estimada</div></div>
+        <div><Activity className="mx-auto h-4 w-4 text-primary" /><div className="mt-1"><LevelPill level={shown.level} /></div><div className="mt-1 text-[11px] text-muted-foreground">movimento</div></div>
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        {est.reports ? `Estimativa baseada em ${est.reports} relato(s) de cidadãos nas últimas ${WINDOW_HOURS}h. Não é informação oficial.` : "Dados de fila indisponíveis: ainda não há relatos recentes para esta unidade."}
+        {est.reports ? `Estimativa baseada em ${est.reports} relato(s) de cidadãos nas últimas ${WINDOW_HOURS}h. Não é informação oficial.` : `Estimativa típica para ${CATEGORY_LABEL[place.category]} neste horário (simulação). Ainda não há relatos de cidadãos nas últimas ${WINDOW_HOURS}h — registre sua chegada para melhorar a estimativa. Não é informação oficial.`}
       </p>
-      <p className="mt-2 text-sm"><span className="font-semibold">Horários com menor movimento: </span>{hours ? hours.map((h) => `${h}h`).join(", ") + " (estimativa)" : "dados insuficientes"}</p>
+      <p className="mt-2 text-sm"><span className="font-semibold">Horários com menor movimento: </span>{(hours ?? typicalQuietHours(place.category)).map((h) => `${h}h`).join(", ")} {hours ? "(estimativa pelos relatos)" : "(estimativa típica)"}</p>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button disabled={sending} onClick={() => report("entrada")} className="flex items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"><LogIn className="h-4 w-4" />Cheguei na fila</button>
