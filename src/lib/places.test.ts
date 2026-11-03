@@ -29,3 +29,25 @@ describe("location search", () => {
     expect(await geocode("bairro inexistente")).toBeNull();
   });
 });
+describe("establishment loading fallback", () => {
+  it("uses OpenStreetMap search when the map servers fail", async () => {
+    const { fetchPlaces } = await import("./places");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("interpreter")) return { ok: false, status: 504 };
+      const amenity = new URL(url).searchParams.get("amenity");
+      return {
+        ok: true,
+        json: async () => (amenity === "pharmacy"
+          ? [{ osm_type: "way", osm_id: 618167209, lat: "-23.4993", lon: "-46.6289", name: "Droga Raia", extratags: { opening_hours: "24/7" }, address: { road: "Rua Voluntários da Pátria", city_district: "Santana" } }]
+          : []),
+      };
+    }));
+    vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 500 });
+    const r = await fetchPlaces({ lat: -23.4993, lon: -46.6289 }, 2000);
+    vi.useRealTimers();
+    expect(r.fromCache).toBe(false);
+    expect(r.places).toHaveLength(1);
+    expect(r.places[0]?.id).toBe("w618167209");
+    expect(r.places[0]?.open24h).toBe(true);
+  }, 20000);
+});

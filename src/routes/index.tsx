@@ -53,8 +53,12 @@ function Index() {
     setError(null);
     setPlaces([]);
     fetchPlaces(center, radius)
-      .then((p) => alive && setPlaces(p))
-      .catch(() => alive && setError("Não foi possível carregar os estabelecimentos agora. Tente novamente em instantes."))
+      .then((r) => {
+        if (!alive) return;
+        setPlaces(r.places);
+        if (r.fromCache) setError("A fonte de dados está lenta agora. Mostrando os últimos resultados salvos para esta área.");
+      })
+      .catch(() => alive && setError("A fonte de dados (OpenStreetMap) está sobrecarregada no momento. Tente novamente em instantes."))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
