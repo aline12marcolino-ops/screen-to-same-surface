@@ -42,6 +42,7 @@ function Index() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<QueueEvent[]>([]);
   const [locQuery, setLocQuery] = useState("");
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +55,7 @@ function Index() {
     return () => {
       alive = false;
     };
-  }, [center.lat, center.lon, radius]);
+  }, [center.lat, center.lon, radius, reload]);
 
   const loadEvents = useCallback(async () => {
     const since = new Date(Date.now() - 30 * 86400_000).toISOString();
@@ -163,7 +164,12 @@ function Index() {
           </label>
         </div>
 
-        {error && <p className="mt-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
+        {error && (
+          <p className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+            <button onClick={() => setReload((n) => n + 1)} className="font-semibold underline">Tentar novamente</button>
+          </p>
+        )}
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_420px]">
           <div className="h-[460px] overflow-hidden rounded-2xl border shadow-card lg:h-[680px]">
