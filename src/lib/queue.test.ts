@@ -26,3 +26,16 @@ describe("queue", () => {
     expect(quietHours([ev("entrada", 1)])).toBeNull();
   });
 });
+
+import { typicalQueue, typicalQuietHours } from "./queue";
+describe("typical estimate (no reports)", () => {
+  it("UBS at 9h peak: 12 people, 144 min", () => {
+    expect(typicalQueue("ubs", 9)).toEqual({ people: 12, waitMinutes: 144, level: "alto" });
+  });
+  it("pharmacy at 3h is empty", () => {
+    expect(typicalQueue("farmacia", 3).people).toBe(0);
+  });
+  it("quiet hours are in the evening", () => {
+    expect(typicalQuietHours("ubs")).toEqual([19, 20, 21]);
+  });
+});

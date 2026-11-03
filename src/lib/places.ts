@@ -153,46 +153,53 @@ function readCache(key: string): Place[] | null {
   }
 }
 
+function writeCache(key: string, places: Place[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ places, at: Date.now() }));
+  } catch {
+    /* storage full or unavailable */
+  }
+}
+
+/** Last saved results for this area, shown instantly while fresh data loads. */
+export function cachedPlaces(center: { lat: number; lon: number }, radiusM: number): Place[] | null {
+  return readCache(cacheKey(center, radiusM));
+}
+
 export type PlacesResult = { places: Place[]; fromCache: boolean };
 
-/** Real health facilities from OpenStreetMap around a point. Queries all mirrors in parallel; falls back to the last saved result for this area. */
+/** Delay before the Nominatim fallback starts racing the Overpass mirrors. */
+export const FALLBACK_DELAY_MS = 2500;
+
+/** Real health facilities from OpenStreetMap around a point. Races all Overpass mirrors and (after a short delay) Nominatim; first non-empty answer wins. Falls back to the last saved result for this area. */
 export async function fetchPlaces(center: { lat: number; lon: number }, radiusM: number): Promise<PlacesResult> {
   const a = `(around:${radiusM},${center.lat},${center.lon})`;
-  const q = `[out:json][timeout:18];(
+  const q = `[out:json][timeout:10];(
     nwr["amenity"~"^(pharmacy|hospital|clinic|doctors)$"]${a};
     nwr["healthcare"~"^(centre|hospital|clinic|pharmacy|doctor)$"]${a};
   );out center tags 400;`;
   const key = cacheKey(center, radiusM);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  let done = false;
+  const overpass = Promise.any(ENDPOINTS.map((u) => queryEndpoint(u, q, ctrl.signal))).then((els) => parseElements(els, center));
+  const nominatim = sleep(FALLBACK_DELAY_MS).then(async () => {
+    if (done) throw new Error("not needed");
+    const places = await fetchPlacesNominatim(center, radiusM, () => done);
+    if (!places.length) throw new Error("empty");
+    return places;
+  });
   try {
-    const elements = await Promise.any(ENDPOINTS.map((u) => queryEndpoint(u, q, ctrl.signal)));
-    const places = parseElements(elements, center);
-    try {
-      localStorage.setItem(key, JSON.stringify({ places, at: Date.now() }));
-    } catch {
-      /* storage full or unavailable */
-    }
+    const places = await Promise.any([overpass, nominatim]);
+    done = true;
+    writeCache(key, places);
     return { places, fromCache: false };
   } catch (e) {
-    ctrl.abort(); // cancel the slower mirrors
-    try {
-      const places = await fetchPlacesNominatim(center, radiusM);
-      if (places.length) {
-        try {
-          localStorage.setItem(key, JSON.stringify({ places, at: Date.now() }));
-        } catch {
-          /* ignore */
-        }
-        return { places, fromCache: false };
-      }
-    } catch {
-      /* fall through to cache */
-    }
     const cached = readCache(key);
     if (cached) return { places: cached, fromCache: true };
     throw e;
   } finally {
+    done = true;
     clearTimeout(timer);
     ctrl.abort();
   }
@@ -212,7 +219,7 @@ type NomEl = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Fallback: same OpenStreetMap data via Nominatim, bounded to the search area (1 request/second per usage policy). */
-export async function fetchPlacesNominatim(center: { lat: number; lon: number }, radiusM: number): Promise<Place[]> {
+export async function fetchPlacesNominatim(center: { lat: number; lon: number }, radiusM: number, cancelled: () => boolean = () => false): Promise<Place[]> {
   const dLat = radiusM / 111_320;
   const dLon = radiusM / (111_320 * Math.cos((center.lat * Math.PI) / 180));
   const viewbox = `${center.lon - dLon},${center.lat + dLat},${center.lon + dLon},${center.lat - dLat}`;
@@ -220,6 +227,7 @@ export async function fetchPlacesNominatim(center: { lat: number; lon: number },
   let ok = 0;
   for (const [i, amenity] of ["pharmacy", "hospital", "clinic", "doctors"].entries()) {
     if (i) await sleep(1100);
+    if (cancelled()) break;
     const params = new URLSearchParams({ format: "jsonv2", amenity, viewbox, bounded: "1", limit: "50", extratags: "1", addressdetails: "1", countrycodes: "br" });
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
