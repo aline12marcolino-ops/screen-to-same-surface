@@ -11,7 +11,9 @@ describe("location search", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const result = await geocode("santana", { lat: -23.5505, lon: -46.6333 });
-    const url = new URL(fetchMock.mock.calls[0][0]);
+    const call = fetchMock.mock.calls[0];
+    if (!call) throw new Error("Location search did not request geocoding");
+    const url = new URL(call[0]);
     expect(url.searchParams.get("viewbox")).toBe("-46.8833,-23.3005,-46.3833,-23.8005");
     expect(url.searchParams.has("bounded")).toBe(false);
     expect(result?.lat).toBe(-23.499321);
