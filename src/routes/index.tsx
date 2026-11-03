@@ -87,13 +87,17 @@ function Index() {
     );
   };
 
-  const searchLocation = async (e: React.FormEvent) => {
+  const smartSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!locQuery.trim() || searchingLocation) return;
+    const term = q.trim();
+    if (!term || searchingLocation) return;
+    const t = term.toLowerCase();
+    const matchesLocal = places.some((p) => p.name.toLowerCase().includes(t) || CATEGORY_LABEL[p.category].toLowerCase().includes(t));
+    if (matchesLocal) return; // nome/tipo de um local já visível: só filtra
     setSearchingLocation(true);
     setLocationError(null);
     try {
-      const r = await geocode(locQuery, center);
+      const r = await geocode(term, center);
       if (!r) {
         setLocationError("Local não encontrado. Inclua a cidade junto com o bairro.");
         return;
@@ -151,14 +155,16 @@ function Index() {
             Farmácias, UBS, AMA, UPA, clínicas e hospitais reais, com movimento e espera estimados pela comunidade.
           </p>
           <div className="mt-8 flex max-w-3xl flex-col gap-3 md:flex-row">
-            <label className="flex flex-1 items-center gap-3 rounded-2xl bg-card px-4 py-3.5 text-foreground shadow-card">
+            <form onSubmit={smartSearch} className="flex flex-1 items-center gap-3 rounded-2xl bg-card px-4 py-2 text-foreground shadow-card">
               <Search className="h-5 w-5 text-muted-foreground" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome, tipo ou endereço…" className="w-full bg-transparent outline-none placeholder:text-muted-foreground" />
-            </label>
-            <button onClick={locate} className="flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3.5 font-semibold text-accent-foreground transition hover:brightness-105">
+              <input aria-label="Buscar bairro, endereço ou local" value={q} onChange={(e) => { setQ(e.target.value); setLocationError(null); }} placeholder="Bairro, endereço ou nome do local…" className="w-full bg-transparent py-1.5 outline-none placeholder:text-muted-foreground" />
+              <Button type="submit" size="sm" disabled={searchingLocation || !q.trim()}>{searchingLocation ? "Buscando…" : "Buscar"}</Button>
+            </form>
+            <button type="button" onClick={locate} className="flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3.5 font-semibold text-accent-foreground transition hover:brightness-105">
               <LocateFixed className="h-5 w-5" /> Usar minha localização
             </button>
           </div>
+          {locationError && <p className="mt-2 text-sm text-accent">{locationError}</p>}
           <div className="mt-6 flex flex-wrap gap-2">
             <Chip active={cat === "todos"} onClick={() => setCat("todos")}>Todos</Chip>
             {CATS.map((c) => (
@@ -176,11 +182,9 @@ function Index() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3 shadow-card">
-          <form onSubmit={searchLocation} className="flex flex-1 items-center gap-2 rounded-xl bg-muted px-3 py-2">
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-            <input aria-label="Bairro, endereço ou cidade" value={locQuery} onChange={(e) => setLocQuery(e.target.value)} placeholder="Bairro, endereço ou cidade" className="w-full min-w-0 bg-transparent text-sm outline-none" />
-            <Button type="submit" variant="ghost" size="sm" disabled={searchingLocation || !locQuery.trim()}>{searchingLocation ? "Buscando…" : "Ir"}</Button>
-          </form>
+          <div className="flex flex-1 items-center gap-2 text-sm text-muted-foreground">
+            <MapPin className="h-4 w-4" /> {center.label}
+          </div>
           <Select value={sector} onChange={(v) => setSector(v as typeof sector)} options={[["todos", "Público e particular"], ["publico", "Público"], ["particular", "Particular"]]} />
           <Select value={String(radius)} onChange={(v) => setRadius(+v)} options={[["1000", "Até 1 km"], ["2000", "Até 2 km"], ["3000", "Até 3 km"]]} />
           <label className="flex items-center gap-2 text-sm">
