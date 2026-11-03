@@ -42,7 +42,6 @@ function Index() {
   const [only24, setOnly24] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<QueueEvent[]>([]);
-  const [locQuery, setLocQuery] = useState("");
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
