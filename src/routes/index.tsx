@@ -192,7 +192,6 @@ function Index() {
           </label>
         </div>
 
-        {locationError && <p role="alert" className="mt-4 text-sm text-destructive">{locationError}</p>}
         {error && (
           <p className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
