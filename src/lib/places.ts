@@ -148,10 +148,16 @@ export async function fetchPlaces(center: { lat: number; lon: number }, radiusM:
   throw lastErr;
 }
 
-export async function geocode(query: string): Promise<{ lat: number; lon: number; label: string } | null> {
-  const res = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`,
-  );
+export async function geocode(query: string, near?: { lat: number; lon: number }): Promise<{ lat: number; lon: number; label: string } | null> {
+  const params = new URLSearchParams({ format: "json", limit: "1", countrycodes: "br", q: query.trim() });
+  // Prefer the current map area without preventing explicit searches elsewhere.
+  if (near) {
+    params.set("viewbox", `${near.lon - 0.25},${near.lat + 0.25},${near.lon + 0.25},${near.lat - 0.25}`);
+  }
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`Geocoding HTTP ${res.status}`);
   const j = (await res.json()) as { lat: string; lon: string; display_name: string }[];
   if (!j[0]) return null;
   return { lat: +j[0].lat, lon: +j[0].lon, label: j[0].display_name };

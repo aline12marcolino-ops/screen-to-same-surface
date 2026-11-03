@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Location searches bias Nominatim toward the current map center without a bounded restriction, so nearby neighborhoods are preferred while explicit searches in other cities remain possible.
