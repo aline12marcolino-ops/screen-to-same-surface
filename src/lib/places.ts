@@ -158,13 +158,13 @@ export type PlacesResult = { places: Place[]; fromCache: boolean };
 /** Real health facilities from OpenStreetMap around a point. Queries all mirrors in parallel; falls back to the last saved result for this area. */
 export async function fetchPlaces(center: { lat: number; lon: number }, radiusM: number): Promise<PlacesResult> {
   const a = `(around:${radiusM},${center.lat},${center.lon})`;
-  const q = `[out:json][timeout:40];(
+  const q = `[out:json][timeout:18];(
     nwr["amenity"~"^(pharmacy|hospital|clinic|doctors)$"]${a};
     nwr["healthcare"~"^(centre|hospital|clinic|pharmacy|doctor)$"]${a};
   );out center tags 400;`;
   const key = cacheKey(center, radiusM);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45000);
+  const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
     const elements = await Promise.any(ENDPOINTS.map((u) => queryEndpoint(u, q, ctrl.signal)));
     const places = parseElements(elements, center);
