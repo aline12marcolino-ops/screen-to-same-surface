@@ -219,7 +219,7 @@ type NomEl = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Fallback: same OpenStreetMap data via Nominatim, bounded to the search area (1 request/second per usage policy). */
-export async function fetchPlacesNominatim(center: { lat: number; lon: number }, radiusM: number): Promise<Place[]> {
+export async function fetchPlacesNominatim(center: { lat: number; lon: number }, radiusM: number, cancelled: () => boolean = () => false): Promise<Place[]> {
   const dLat = radiusM / 111_320;
   const dLon = radiusM / (111_320 * Math.cos((center.lat * Math.PI) / 180));
   const viewbox = `${center.lon - dLon},${center.lat + dLat},${center.lon + dLon},${center.lat - dLat}`;
@@ -227,6 +227,7 @@ export async function fetchPlacesNominatim(center: { lat: number; lon: number },
   let ok = 0;
   for (const [i, amenity] of ["pharmacy", "hospital", "clinic", "doctors"].entries()) {
     if (i) await sleep(1100);
+    if (cancelled()) break;
     const params = new URLSearchParams({ format: "jsonv2", amenity, viewbox, bounded: "1", limit: "50", extratags: "1", addressdetails: "1", countrycodes: "br" });
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
