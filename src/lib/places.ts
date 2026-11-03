@@ -175,13 +175,75 @@ export async function fetchPlaces(center: { lat: number; lon: number }, radiusM:
     }
     return { places, fromCache: false };
   } catch (e) {
+    ctrl.abort(); // cancel the slower mirrors
+    try {
+      const places = await fetchPlacesNominatim(center, radiusM);
+      if (places.length) {
+        try {
+          localStorage.setItem(key, JSON.stringify({ places, at: Date.now() }));
+        } catch {
+          /* ignore */
+        }
+        return { places, fromCache: false };
+      }
+    } catch {
+      /* fall through to cache */
+    }
     const cached = readCache(key);
     if (cached) return { places: cached, fromCache: true };
     throw e;
   } finally {
     clearTimeout(timer);
-    ctrl.abort(); // cancel the slower mirrors
+    ctrl.abort();
   }
+}
+
+type NomEl = {
+  osm_type: string;
+  osm_id: number;
+  lat: string;
+  lon: string;
+  name?: string;
+  type?: string;
+  extratags?: Record<string, string> | null;
+  address?: Record<string, string>;
+};
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Fallback: same OpenStreetMap data via Nominatim, bounded to the search area (1 request/second per usage policy). */
+export async function fetchPlacesNominatim(center: { lat: number; lon: number }, radiusM: number): Promise<Place[]> {
+  const dLat = radiusM / 111_320;
+  const dLon = radiusM / (111_320 * Math.cos((center.lat * Math.PI) / 180));
+  const viewbox = `${center.lon - dLon},${center.lat + dLat},${center.lon + dLon},${center.lat - dLat}`;
+  const els: OsmEl[] = [];
+  let ok = 0;
+  for (const [i, amenity] of ["pharmacy", "hospital", "clinic", "doctors"].entries()) {
+    if (i) await sleep(1100);
+    const params = new URLSearchParams({ format: "jsonv2", amenity, viewbox, bounded: "1", limit: "50", extratags: "1", addressdetails: "1", countrycodes: "br" });
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) continue;
+      const list = (await res.json()) as NomEl[];
+      ok++;
+      for (const n of list) {
+        const a = n.address ?? {};
+        const tags: Record<string, string> = { ...(n.extratags ?? {}), amenity };
+        if (n.name) tags["name"] = n.name;
+        if (a["road"]) tags["addr:street"] = a["road"];
+        if (a["house_number"]) tags["addr:housenumber"] = a["house_number"];
+        const suburb = a["suburb"] ?? a["city_district"];
+        if (suburb) tags["addr:suburb"] = suburb;
+        if (a["city"] ?? a["town"]) tags["addr:city"] = (a["city"] ?? a["town"])!;
+        if (a["postcode"]) tags["addr:postcode"] = a["postcode"];
+        els.push({ type: n.osm_type, id: n.osm_id, lat: +n.lat, lon: +n.lon, tags });
+      }
+    } catch {
+      /* try next category */
+    }
+  }
+  if (!ok) throw new Error("Nominatim unavailable");
+  return parseElements(els, center).filter((p) => (p.distanceKm ?? 0) <= radiusM / 1000);
 }
 
 export async function geocode(query: string, near?: { lat: number; lon: number }): Promise<{ lat: number; lon: number; label: string } | null> {
