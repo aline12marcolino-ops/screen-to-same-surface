@@ -53,13 +53,13 @@ type OsmEl = {
 };
 
 export function classify(tags: Record<string, string>): Category | null {
-  const n = (tags.name ?? "").toLowerCase();
+  const n = (tags["name"] ?? "").toLowerCase();
   if (/\bupa\b|pronto atendimento/.test(n)) return "upa";
   if (/\bama\b|assist[eê]ncia m[eé]dica ambulatorial/.test(n)) return "ama";
-  if (/\bubs\b|unidade b[aá]sica|posto de sa[uú]de|\besf\b/.test(n) || tags.healthcare === "centre") return "ubs";
-  if (tags.amenity === "pharmacy" || tags.healthcare === "pharmacy") return "farmacia";
-  if (tags.amenity === "hospital" || tags.healthcare === "hospital") return "hospital";
-  if (tags.amenity === "clinic" || tags.amenity === "doctors" || tags.healthcare === "clinic" || tags.healthcare === "doctor")
+  if (/\bubs\b|unidade b[aá]sica|posto de sa[uú]de|\besf\b/.test(n) || tags["healthcare"] === "centre") return "ubs";
+  if (tags["amenity"] === "pharmacy" || tags["healthcare"] === "pharmacy") return "farmacia";
+  if (tags["amenity"] === "hospital" || tags["healthcare"] === "hospital") return "hospital";
+  if (tags["amenity"] === "clinic" || tags["amenity"] === "doctors" || tags["healthcare"] === "clinic" || tags["healthcare"] === "doctor")
     return "clinica";
   return null;
 }
@@ -69,9 +69,9 @@ export function sectorOf(tags: Record<string, string>, cat: Category): Sector {
   if (["public", "government", "public_sector"].includes(op)) return "publico";
   if (["private", "commercial", "business"].includes(op)) return "particular";
   if (cat === "ubs" || cat === "ama" || cat === "upa") return "publico";
-  const s = `${tags.name ?? ""} ${tags.operator ?? ""}`.toLowerCase();
+  const s = `${tags["name"] ?? ""} ${tags["operator"] ?? ""}`.toLowerCase();
   if (/municipal|estadual|federal|\bsus\b|prefeitura|secretaria/.test(s)) return "publico";
-  if (cat === "farmacia" && tags.brand) return "particular";
+  if (cat === "farmacia" && tags["brand"]) return "particular";
   return "nao_informado";
 }
 
@@ -111,25 +111,25 @@ export async function fetchPlaces(center: { lat: number; lon: number }, radiusM:
       const seen = new Set<string>();
       for (const el of json.elements) {
         const t = el.tags ?? {};
-        if (!t.name) continue; // only real, named units
+        if (!t["name"]) continue; // only real, named units
         const lat = el.lat ?? el.center?.lat;
         const lon = el.lon ?? el.center?.lon;
         if (lat == null || lon == null) continue;
         const cat = classify(t);
         if (!cat) continue;
-        const key = `${t.name}|${lat.toFixed(4)}|${lon.toFixed(4)}`;
+        const key = `${t["name"]}|${lat.toFixed(4)}|${lon.toFixed(4)}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const hours = t.opening_hours ?? null;
+        const hours = t["opening_hours"] ?? null;
         out.push({
           id: `${el.type[0]}${el.id}`,
-          name: t.name,
+          name: t["name"],
           category: cat,
           sector: sectorOf(t, cat),
           lat,
           lon,
           address: addressOf(t),
-          phone: t.phone ?? t["contact:phone"] ?? null,
+          phone: t["phone"] ?? t["contact:phone"] ?? null,
           hours,
           open24h: hours === "24/7",
           distanceKm: haversineKm(center, { lat, lon }),
