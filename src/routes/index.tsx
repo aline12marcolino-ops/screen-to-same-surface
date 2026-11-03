@@ -3,6 +3,7 @@ import { ClientOnly } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Search, MapPin, Phone, Clock, LocateFixed, Users, Timer, Activity, Building2, Info, LogIn, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 import { CATEGORY_COLOR, CATEGORY_GLYPH, CATEGORY_LABEL, fetchPlaces, geocode, haversineKm, type Place, type Sector } from "@/lib/places";
 import { estimateQueue, quietHours, WINDOW_HOURS, type Category, type QueueEvent } from "@/lib/queue";
 
@@ -42,12 +43,15 @@ function Index() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [events, setEvents] = useState<QueueEvent[]>([]);
   const [locQuery, setLocQuery] = useState("");
+  const [searchingLocation, setSearchingLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError(null);
+    setPlaces([]);
     fetchPlaces(center, radius)
       .then((p) => alive && setPlaces(p))
       .catch(() => alive && setError("Não foi possível carregar os estabelecimentos agora. Tente novamente em instantes."))
@@ -81,10 +85,27 @@ function Index() {
 
   const searchLocation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!locQuery.trim()) return;
-    const r = await geocode(locQuery);
-    if (r) setCenter({ lat: r.lat, lon: r.lon, label: r.label.split(",").slice(0, 2).join(",") });
-    else setError("Local não encontrado.");
+    if (!locQuery.trim() || searchingLocation) return;
+    setSearchingLocation(true);
+    setLocationError(null);
+    try {
+      const r = await geocode(locQuery, center);
+      if (!r) {
+        setLocationError("Local não encontrado. Inclua a cidade junto com o bairro.");
+        return;
+      }
+      setCenter(r);
+      setSelectedId(null);
+      setQ("");
+      setCat("todos");
+      setSector("todos");
+      setOnly24(false);
+      setReload((n) => n + 1);
+    } catch {
+      setLocationError("Não foi possível buscar o bairro agora. Tente novamente.");
+    } finally {
+      setSearchingLocation(false);
+    }
   };
 
   const origin = user ?? center;
@@ -153,8 +174,8 @@ function Index() {
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3 shadow-card">
           <form onSubmit={searchLocation} className="flex flex-1 items-center gap-2 rounded-xl bg-muted px-3 py-2">
             <MapPin className="h-4 w-4 text-muted-foreground" />
-            <input value={locQuery} onChange={(e) => setLocQuery(e.target.value)} placeholder="Bairro, endereço ou cidade" className="w-full min-w-40 bg-transparent text-sm outline-none" />
-            <button className="text-sm font-semibold text-primary">Ir</button>
+            <input aria-label="Bairro, endereço ou cidade" value={locQuery} onChange={(e) => setLocQuery(e.target.value)} placeholder="Bairro, endereço ou cidade" className="w-full min-w-0 bg-transparent text-sm outline-none" />
+            <Button type="submit" variant="ghost" size="sm" disabled={searchingLocation || !locQuery.trim()}>{searchingLocation ? "Buscando…" : "Ir"}</Button>
           </form>
           <Select value={sector} onChange={(v) => setSector(v as typeof sector)} options={[["todos", "Público e particular"], ["publico", "Público"], ["particular", "Particular"]]} />
           <Select value={String(radius)} onChange={(v) => setRadius(+v)} options={[["1000", "Até 1 km"], ["2000", "Até 2 km"], ["3000", "Até 3 km"]]} />
@@ -164,6 +185,7 @@ function Index() {
           </label>
         </div>
 
+        {locationError && <p role="alert" className="mt-4 text-sm text-destructive">{locationError}</p>}
         {error && (
           <p className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
@@ -186,7 +208,7 @@ function Index() {
             {filtered.slice(0, 80).map((p) => (
               <PlaceCard key={p.id} place={p} events={byPlace.get(p.id) ?? []} active={p.id === selectedId} onClick={() => setSelectedId(p.id)} />
             ))}
-            {!loading && filtered.length === 0 && <p className="rounded-2xl border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum estabelecimento com esses filtros.</p>}
+            {!loading && !error && filtered.length === 0 && <p className="rounded-2xl border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum estabelecimento com esses filtros.</p>}
           </div>
         </div>
 
@@ -231,7 +253,7 @@ function Stat({ icon, label, value, sub }: { icon: React.ReactNode; label: strin
     <div className="rounded-2xl border bg-card p-5 shadow-card">
       <div className="flex items-center gap-2 text-sm text-muted-foreground"><span className="text-primary">{icon}</span>{label}</div>
       <div className="mt-1 font-display text-3xl font-extrabold">{value}</div>
-      <div className="truncate text-xs text-muted-foreground">{sub}</div>
+      <div className="break-words text-xs text-muted-foreground">{sub}</div>
     </div>
   );
 }
@@ -257,7 +279,7 @@ function PlaceCard({ place, events, active, onClick }: { place: Place; events: Q
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold leading-snug">{place.name}</h3>
-          <span className="shrink-0 text-xs text-muted-foreground">{place.distanceKm!.toFixed(1)} km</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{place.distanceKm?.toFixed(1) ?? "—"} km</span>
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground">{CATEGORY_LABEL[place.category]} · {SECTOR_LABEL[place.sector]}</p>
         <p className="mt-1 truncate text-xs text-muted-foreground">{place.address ?? NA}</p>
@@ -293,7 +315,7 @@ function Detail({ place, events, onReported, onClose }: { place: Place; events: 
         <CatBadge c={place.category} />
         <div className="flex-1">
           <h2 className="font-display text-xl font-bold leading-tight">{place.name}</h2>
-          <p className="text-sm text-muted-foreground">{CATEGORY_LABEL[place.category]} · {SECTOR_LABEL[place.sector]} · {place.distanceKm!.toFixed(1)} km</p>
+          <p className="text-sm text-muted-foreground">{CATEGORY_LABEL[place.category]} · {SECTOR_LABEL[place.sector]} · {place.distanceKm?.toFixed(1) ?? "—"} km</p>
         </div>
         <button onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground">Fechar</button>
       </div>
