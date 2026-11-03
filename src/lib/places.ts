@@ -92,7 +92,12 @@ export function haversineKm(a: { lat: number; lon: number }, b: { lat: number; l
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
-const ENDPOINTS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+const ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
 
 /** Real health facilities from OpenStreetMap around a point. */
 export async function fetchPlaces(center: { lat: number; lon: number }, radiusM: number): Promise<Place[]> {
@@ -104,7 +109,7 @@ export async function fetchPlaces(center: { lat: number; lon: number }, radiusM:
   let lastErr: unknown;
   for (const url of ENDPOINTS) {
     try {
-      const res = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q) });
+      const res = await fetch(url, { method: "POST", signal: AbortSignal.timeout(20000), body: "data=" + encodeURIComponent(q) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { elements: OsmEl[] };
       const out: Place[] = [];
