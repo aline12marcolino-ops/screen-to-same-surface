@@ -36,6 +36,6 @@ describe("typical estimate (no reports)", () => {
     expect(typicalQueue("farmacia", 3).people).toBe(0);
   });
   it("quiet hours are in the evening", () => {
-    expect(typicalQuietHours("ubs")).toEqual([7, 20, 21]);
+    expect(typicalQuietHours("ubs")).toEqual([19, 20, 21]);
   });
 });
