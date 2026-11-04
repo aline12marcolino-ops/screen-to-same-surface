@@ -39,3 +39,13 @@ describe("typical estimate (no reports)", () => {
     expect(typicalQuietHours("ubs")).toEqual([19, 20, 21]);
   });
 });
+
+import { combinedQueue as cq } from "./queue";
+describe("combined queue", () => {
+  it("one check-in at a busy UBS adds to the typical queue instead of dropping to low", () => {
+    const now = new Date(2026, 10, 4, 9, 0).getTime(); // 9h: peak, typical 12 people
+    const r = cq([{ place_id: "x", kind: "entrada", created_at: new Date(now - 60000).toISOString() }], "ubs", now);
+    expect(r.people).toBe(13);
+    expect(r.level).toBe("alto");
+  });
+});

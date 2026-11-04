@@ -254,6 +254,26 @@ export async function fetchPlacesNominatim(center: { lat: number; lon: number },
   return parseElements(els, center).filter((p) => (p.distanceKm ?? 0) <= radiusM / 1000);
 }
 
+export type GeoResult = { lat: number; lon: number; label: string };
+
+/** Up to 6 distinct matches (e.g. same street name in different neighborhoods/cities), nearby ones first. */
+export async function geocodeAll(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
+  const params = new URLSearchParams({ format: "json", limit: "8", countrycodes: "br", q: query.trim() });
+  if (near) params.set("viewbox", `${near.lon - 0.25},${near.lat + 0.25},${near.lon + 0.25},${near.lat - 0.25}`);
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`Geocoding HTTP ${res.status}`);
+  const j = (await res.json()) as { lat: string; lon: string; display_name: string }[];
+  const seen = new Set<string>();
+  const out: GeoResult[] = [];
+  for (const r of j) {
+    const label = r.display_name.split(", ").filter((s) => !/^(Brasil|Região|\d{5}-?\d{3}$)/.test(s)).join(", ");
+    if (seen.has(label)) continue;
+    seen.add(label);
+    out.push({ lat: +r.lat, lon: +r.lon, label });
+  }
+  return out.slice(0, 6);
+}
+
 export async function geocode(query: string, near?: { lat: number; lon: number }): Promise<{ lat: number; lon: number; label: string } | null> {
   const params = new URLSearchParams({ format: "json", limit: "1", countrycodes: "br", q: query.trim() });
   // Prefer the current map area without preventing explicit searches elsewhere.

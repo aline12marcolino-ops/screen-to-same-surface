@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ClientOnly } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Search, MapPin, Phone, Clock, LocateFixed, Users, Timer, Activity, Building2, Info, LogIn, LogOut } from "lucide-react";
+import { Search, MapPin, Phone, Clock, LocateFixed, Users, Timer, Activity, Building2, LogIn, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { cachedPlaces, CATEGORY_COLOR, CATEGORY_GLYPH, CATEGORY_LABEL, fetchPlaces, geocode, haversineKm, type Place, type Sector } from "@/lib/places";
-import { estimateQueue, quietHours, typicalQueue, typicalQuietHours, WINDOW_HOURS, type Category, type QueueEvent } from "@/lib/queue";
+import { cachedPlaces, CATEGORY_COLOR, CATEGORY_GLYPH, CATEGORY_LABEL, fetchPlaces, geocodeAll, haversineKm, type GeoResult, type Place, type Sector } from "@/lib/places";
+import { combinedQueue, quietHours, typicalQuietHours, WINDOW_HOURS, type Category, type QueueEvent } from "@/lib/queue";
 
 const HealthMap = lazy(() => import("@/components/HealthMap"));
 
@@ -45,6 +45,7 @@ function Index() {
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [options, setOptions] = useState<GeoResult[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -96,23 +97,33 @@ function Index() {
     setSearchingLocation(true);
     setLocationError(null);
     try {
-      const r = await geocode(term, center);
-      if (!r) {
-        setLocationError("Local não encontrado. Inclua a cidade junto com o bairro.");
+      const list = await geocodeAll(term, center);
+      if (!list.length) {
+        setLocationError("Local não encontrado. Tente incluir a cidade, ex.: \"Rua Augusta, São Paulo\".");
         return;
       }
-      setCenter(r);
-      setSelectedId(null);
-      setQ("");
-      setCat("todos");
-      setSector("todos");
-      setOnly24(false);
-      setReload((n) => n + 1);
+      if (list.length === 1) goTo(list[0]!);
+      else setOptions(list);
     } catch {
       setLocationError("Não foi possível buscar o bairro agora. Tente novamente.");
     } finally {
       setSearchingLocation(false);
     }
+  };
+
+  useEffect(() => {
+    if (selectedId) setTimeout(() => document.getElementById(`place-${selectedId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+  }, [selectedId]);
+
+  const goTo = (r: GeoResult) => {
+    setOptions([]);
+    setCenter(r);
+    setSelectedId(null);
+    setQ("");
+    setCat("todos");
+    setSector("todos");
+    setOnly24(false);
+    setReload((n) => n + 1);
   };
 
   const origin = user ?? center;
@@ -156,7 +167,7 @@ function Index() {
           <div className="mt-8 flex max-w-3xl flex-col gap-3 md:flex-row">
             <form onSubmit={smartSearch} className="flex flex-1 items-center gap-3 rounded-2xl bg-card px-4 py-2 text-foreground shadow-card">
               <Search className="h-5 w-5 text-muted-foreground" />
-              <input aria-label="Buscar bairro, endereço ou local" value={q} onChange={(e) => { setQ(e.target.value); setLocationError(null); }} placeholder="Bairro, endereço ou nome do local…" className="w-full bg-transparent py-1.5 outline-none placeholder:text-muted-foreground" />
+              <input aria-label="Buscar bairro, endereço ou local" value={q} onChange={(e) => { setQ(e.target.value); setLocationError(null); setOptions([]); }} placeholder="Bairro, endereço ou nome do local…" className="w-full bg-transparent py-1.5 outline-none placeholder:text-muted-foreground" />
               <Button type="submit" size="sm" disabled={searchingLocation || !q.trim()}>{searchingLocation ? "Buscando…" : "Buscar"}</Button>
             </form>
             <button type="button" onClick={locate} className="flex items-center justify-center gap-2 rounded-2xl bg-accent px-5 py-3.5 font-semibold text-accent-foreground transition hover:brightness-105">
@@ -164,6 +175,16 @@ function Index() {
             </button>
           </div>
           {locationError && <p className="mt-2 text-sm text-accent">{locationError}</p>}
+          {options.length > 0 && (
+            <div className="mt-3 max-w-3xl overflow-hidden rounded-2xl bg-card text-foreground shadow-card">
+              <p className="px-4 pt-3 text-xs font-semibold text-muted-foreground">Encontramos mais de um lugar. Qual é o seu?</p>
+              {options.map((o) => (
+                <button key={`${o.lat},${o.lon}`} type="button" onClick={() => goTo(o)} className="flex w-full items-start gap-2 border-b px-4 py-3 text-left text-sm last:border-0 hover:bg-secondary">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />{o.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-6 flex flex-wrap gap-2">
             <Chip active={cat === "todos"} onClick={() => setCat("todos")}>Todos</Chip>
             {CATS.map((c) => (
@@ -174,10 +195,9 @@ function Index() {
       </header>
 
       <main className="mx-auto max-w-7xl px-5 py-6">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <Stat icon={<Building2 className="h-4 w-4" />} label="Estabelecimentos na área" value={loading ? "…" : String(places.length)} sub={`raio de ${radius / 1000} km · ${center.label}`} />
           <Stat icon={<Users className="h-4 w-4" />} label="Relatos de fila" value={String(recentReports)} sub={`últimas ${WINDOW_HOURS}h, enviados por cidadãos`} />
-          <Stat icon={<Info className="h-4 w-4" />} label="Fonte dos dados" value="OpenStreetMap" sub="unidades reais · atualizado a cada busca" />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-3 shadow-card">
@@ -209,11 +229,15 @@ function Index() {
           </div>
 
           <div className="flex flex-col gap-3 lg:h-[680px] lg:overflow-y-auto lg:pr-1">
-            {selected && <Detail place={selected} events={byPlace.get(selected.id) ?? []} onReported={loadEvents} onClose={() => setSelectedId(null)} />}
             <p className="text-sm text-muted-foreground">{loading ? "Buscando estabelecimentos…" : `${filtered.length} resultados`}</p>
-            {filtered.slice(0, 80).map((p) => (
-              <PlaceCard key={p.id} place={p} events={byPlace.get(p.id) ?? []} active={p.id === selectedId} onClick={() => setSelectedId(p.id)} />
-            ))}
+            {selected && !filtered.slice(0, 80).some((p) => p.id === selected.id) && <Detail place={selected} events={byPlace.get(selected.id) ?? []} onReported={loadEvents} onClose={() => setSelectedId(null)} />}
+            {filtered.slice(0, 80).map((p) =>
+              p.id === selectedId ? (
+                <div key={p.id} id={`place-${p.id}`} className="scroll-mt-4"><Detail place={p} events={byPlace.get(p.id) ?? []} onReported={loadEvents} onClose={() => setSelectedId(null)} /></div>
+              ) : (
+                <PlaceCard key={p.id} place={p} events={byPlace.get(p.id) ?? []} active={false} onClick={() => setSelectedId(p.id)} />
+              ),
+            )}
             {!loading && !error && filtered.length === 0 && <p className="rounded-2xl border bg-card p-6 text-center text-sm text-muted-foreground">Nenhum estabelecimento com esses filtros.</p>}
           </div>
         </div>
@@ -230,7 +254,7 @@ function Index() {
             </div>
           ))}
         </section>
-        <footer className="py-10 text-center text-xs text-muted-foreground">Dados de estabelecimentos © colaboradores do OpenStreetMap. Em emergência, ligue 192 (SAMU).</footer>
+        <footer className="py-10 text-center text-xs text-muted-foreground">Dados de estabelecimentos © colaboradores do OpenStreetMap. Fonte: unidades reais do OpenStreetMap, atualizadas a cada busca. Em emergência, ligue 192 (SAMU).</footer>
       </main>
     </div>
   );
@@ -278,8 +302,7 @@ function LevelPill({ level }: { level: "baixo" | "moderado" | "alto" }) {
 }
 
 function PlaceCard({ place, events, active, onClick }: { place: Place; events: QueueEvent[]; active: boolean; onClick: () => void }) {
-  const est = estimateQueue(events, place.category);
-  const typ = typicalQueue(place.category, new Date().getHours());
+  const est = combinedQueue(events, place.category);
   return (
     <button onClick={onClick} className={`flex gap-3 rounded-2xl border bg-card p-4 text-left shadow-card transition hover:border-primary ${active ? "border-primary ring-2 ring-primary/20" : ""}`}>
       <CatBadge c={place.category} />
@@ -291,11 +314,7 @@ function PlaceCard({ place, events, active, onClick }: { place: Place; events: Q
         <p className="mt-0.5 text-xs text-muted-foreground">{CATEGORY_LABEL[place.category]} · {SECTOR_LABEL[place.sector]}</p>
         <p className="mt-1 truncate text-xs text-muted-foreground">{place.address ?? NA}</p>
         <div className="mt-2 text-xs">
-          {est.reports > 0 ? (
-            <span className="flex items-center gap-2"><LevelPill level={est.level} /> ~{est.waitMinutes} min · estimativa</span>
-          ) : (
-            <span className="flex items-center gap-2 text-muted-foreground"><LevelPill level={typ.level} /> ~{typ.people} pessoas · {typ.waitMinutes} min · estimativa típica</span>
-          )}
+          <span className="flex items-center gap-2 text-muted-foreground"><LevelPill level={est.level} /> ~{est.people} pessoas · {est.waitMinutes} min · {est.reports ? "com relatos" : "estimativa típica"}</span>
         </div>
       </div>
     </button>
@@ -303,10 +322,8 @@ function PlaceCard({ place, events, active, onClick }: { place: Place; events: Q
 }
 
 function Detail({ place, events, onReported, onClose }: { place: Place; events: QueueEvent[]; onReported: () => void; onClose: () => void }) {
-  const est = estimateQueue(events, place.category);
-  const live = est.reports > 0;
-  const typ = typicalQueue(place.category, new Date().getHours());
-  const shown = live ? est : typ;
+  const est = combinedQueue(events, place.category);
+  const shown = est;
   const hours = quietHours(events);
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -341,7 +358,7 @@ function Detail({ place, events, onReported, onClose }: { place: Place; events: 
         <div><Activity className="mx-auto h-4 w-4 text-primary" /><div className="mt-1"><LevelPill level={shown.level} /></div><div className="mt-1 text-[11px] text-muted-foreground">movimento</div></div>
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        {est.reports ? `Estimativa baseada em ${est.reports} relato(s) de cidadãos nas últimas ${WINDOW_HOURS}h. Não é informação oficial.` : `Estimativa típica para ${CATEGORY_LABEL[place.category]} neste horário (simulação). Ainda não há relatos de cidadãos nas últimas ${WINDOW_HOURS}h — registre sua chegada para melhorar a estimativa. Não é informação oficial.`}
+        {est.reports ? `Estimativa típica deste horário ajustada por ${est.reports} relato(s) de cidadãos nas últimas ${WINDOW_HOURS}h. Não é informação oficial.` : `Estimativa típica para ${CATEGORY_LABEL[place.category]} neste horário (simulação). Ainda não há relatos de cidadãos nas últimas ${WINDOW_HOURS}h — registre sua chegada para melhorar a estimativa. Não é informação oficial.`}
       </p>
       <p className="mt-2 text-sm"><span className="font-semibold">Horários com menor movimento: </span>{(hours ?? typicalQuietHours(place.category)).map((h) => `${h}h`).join(", ")} {hours ? "(estimativa pelos relatos)" : "(estimativa típica)"}</p>
 
