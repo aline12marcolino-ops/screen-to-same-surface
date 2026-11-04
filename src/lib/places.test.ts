@@ -51,3 +51,15 @@ describe("establishment loading fallback", () => {
     expect(r.places[0]?.open24h).toBe(true);
   }, 20000);
 });
+
+describe("street search with typos", () => {
+  it("finds Rua Andrea Del Castagno when typed as 'andreia'", async () => {
+    const { geocodeAll } = await import("./places");
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => {
+      const q = new URL(u).searchParams.get("q") ?? "";
+      return { ok: true, json: async () => (/^del castagno/i.test(q) ? [{ lat: "-23.5", lon: "-46.68", display_name: "Rua Andrea Del Castagno, Limão, São Paulo, Brasil" }] : []) };
+    }));
+    const r = await geocodeAll("rua andreia del castagno, são paulo");
+    expect(r[0]?.label).toBe("Rua Andrea Del Castagno, Limão, São Paulo");
+  }, 10000);
+});
