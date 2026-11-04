@@ -262,6 +262,7 @@ const STREET_PREFIX = /^\s*(rua|r\.|avenida|av\.?|alameda|al\.|travessa|tv\.|est
 /** Searches what was typed and, when no street type was given, also "Rua …" so streets like "santana, 55" appear. */
 export async function geocodeAll(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
   const first = await geocodeOnce(query, near);
+  if (!first.length) return fuzzyGeocode(query, near);
   if (STREET_PREFIX.test(query)) return first;
   await sleep(1100); // Nominatim: 1 request/second
   const streets = await geocodeOnce(`Rua ${query.trim()}`, near).catch(() => []);
@@ -269,6 +270,23 @@ export async function geocodeAll(query: string, near?: { lat: number; lon: numbe
   // Exact street-name matches first, then the rest.
   const all = [...streets.slice(0, 4), ...first, ...streets.slice(4)].filter((r) => !seen.has(r.label) && seen.add(r.label));
   return all.slice(0, 8);
+}
+
+/** Small typos ("andreia" for "Andrea"): retry with fewer words of the name, keeping the city. */
+async function fuzzyGeocode(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
+  const [name = "", ...rest] = query.split(",");
+  const city = rest.map((s) => s.trim()).filter((s) => s && !/^\d+$/.test(s)).join(", ");
+  const words = name.replace(STREET_PREFIX, "").trim().split(/\s+/).filter(Boolean);
+  const tries: string[] = [];
+  if (words.length > 1) tries.push(words.slice(1).join(" "));
+  const longest = [...words].sort((a, b) => b.length - a.length)[0];
+  if (longest && longest.length >= 5 && !tries.includes(longest)) tries.push(longest);
+  for (const t of tries) {
+    await sleep(1100);
+    const r = await geocodeOnce(city ? `${t}, ${city}` : t, near).catch(() => []);
+    if (r.length) return r;
+  }
+  return [];
 }
 
 async function geocodeOnce(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
