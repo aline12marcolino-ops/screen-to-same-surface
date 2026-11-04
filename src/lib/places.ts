@@ -257,7 +257,21 @@ export async function fetchPlacesNominatim(center: { lat: number; lon: number },
 export type GeoResult = { lat: number; lon: number; label: string };
 
 /** Up to 6 distinct matches (e.g. same street name in different neighborhoods/cities), nearby ones first. */
+const STREET_PREFIX = /^\s*(rua|r\.|avenida|av\.?|alameda|al\.|travessa|tv\.|estrada|rodovia|pra[cç]a|largo|viela)\b/i;
+
+/** Searches what was typed and, when no street type was given, also "Rua …" so streets like "santana, 55" appear. */
 export async function geocodeAll(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
+  const first = await geocodeOnce(query, near);
+  if (STREET_PREFIX.test(query)) return first;
+  await sleep(1100); // Nominatim: 1 request/second
+  const streets = await geocodeOnce(`Rua ${query.trim()}`, near).catch(() => []);
+  const seen = new Set<string>();
+  // Exact street-name matches first, then the rest.
+  const all = [...streets.slice(0, 4), ...first, ...streets.slice(4)].filter((r) => !seen.has(r.label) && seen.add(r.label));
+  return all.slice(0, 8);
+}
+
+async function geocodeOnce(query: string, near?: { lat: number; lon: number }): Promise<GeoResult[]> {
   const params = new URLSearchParams({ format: "json", limit: "8", countrycodes: "br", q: query.trim() });
   if (near) params.set("viewbox", `${near.lon - 0.25},${near.lat + 0.25},${near.lon + 0.25},${near.lat - 0.25}`);
   const res = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
