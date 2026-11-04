@@ -90,3 +90,14 @@ export function typicalQuietHours(category: Category, count = 3): number[] {
     .map(({ h }) => h)
     .sort((a, b) => a - b);
 }
+
+/** Typical queue for this hour adjusted by recent citizen check-ins/outs, so one report never resets the level. */
+export function combinedQueue(events: QueueEvent[], category: Category, now = Date.now()) {
+  const est = estimateQueue(events, category, now);
+  const typ = typicalQueue(category, new Date(now).getHours());
+  const since = now - WINDOW_HOURS * 3600_000;
+  let net = 0;
+  for (const e of events) if (new Date(e.created_at).getTime() >= since) net += e.kind === "entrada" ? 1 : -1;
+  const people = Math.max(0, typ.people + net);
+  return { reports: est.reports, people, waitMinutes: people * MINUTES_PER_PERSON[category], level: levelFor(people) };
+}
